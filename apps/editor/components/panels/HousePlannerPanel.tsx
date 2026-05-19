@@ -14,6 +14,8 @@ import {
   type AnyNodeId,
   useScene,
 } from '@pascal-app/core'
+import { useEditor } from '@pascal-app/editor'
+import { useViewer } from '@pascal-app/viewer'
 import { AlertTriangle, CheckCircle2, Home, RotateCcw, Sparkles } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -200,6 +202,8 @@ function Section({
 export function HousePlannerPanel() {
   const createNodes = useScene((state) => state.createNodes)
   const deleteNode = useScene((state) => state.deleteNode)
+  const setSelection = useViewer((state) => state.setSelection)
+  const setPhase = useEditor((state) => state.setPhase)
 
   const [selections, setSelections] = useState<Selections>({
     plot: null,
@@ -271,9 +275,12 @@ export function HousePlannerPanel() {
     const bedroomCount = bedrooms.count
     const cellW = plot.width / bedroomCount
 
+    let groundLevelId = ''
+
     for (let floor = 0; floor < style.floors; floor++) {
       // Create level
       const level = LevelNode.parse({ level: floor })
+      if (floor === 0) groundLevelId = level.id
       ops.push({ node: level, parentId: building.id })
       ids.push(level.id)
 
@@ -411,7 +418,7 @@ export function HousePlannerPanel() {
       // Create roof on top floor only
       if (floor === style.floors - 1) {
         const roofSegment = RoofSegmentNode.parse({
-          position: [0, 2.5, 0],
+          position: [0, 0, 0],
           roofType: 'gable',
           width: plot.width,
           depth: plot.depth,
@@ -420,7 +427,7 @@ export function HousePlannerPanel() {
           overhang: 0.4,
         })
         const roof = RoofNode.parse({
-          position: [0, 0, 0],
+          position: [0, 2.5, 0],
           children: [roofSegment.id],
         })
         ops.push({ node: roof, parentId: level.id })
@@ -433,32 +440,33 @@ export function HousePlannerPanel() {
       if (floor === 0 && parking.id !== 'none') {
         const parkW = Math.min(4, plot.width)
         const parkD = Math.min(5, plot.depth / 3)
-        const parkX = halfD + parkD / 2
+        const parkZStart = halfD
+        const parkZEnd = halfD + parkD
 
         const parkFront = WallNode.parse({
-          start: [-parkW / 2, parkX],
-          end: [parkW / 2, parkX],
+          start: [-parkW / 2, parkZStart],
+          end: [parkW / 2, parkZStart],
         })
         ops.push({ node: parkFront, parentId: level.id })
         ids.push(parkFront.id)
 
         const parkRight = WallNode.parse({
-          start: [parkW / 2, parkX],
-          end: [parkW / 2, parkX + parkD],
+          start: [parkW / 2, parkZStart],
+          end: [parkW / 2, parkZEnd],
         })
         ops.push({ node: parkRight, parentId: level.id })
         ids.push(parkRight.id)
 
         const parkBack = WallNode.parse({
-          start: [parkW / 2, parkX + parkD],
-          end: [-parkW / 2, parkX + parkD],
+          start: [parkW / 2, parkZEnd],
+          end: [-parkW / 2, parkZEnd],
         })
         ops.push({ node: parkBack, parentId: level.id })
         ids.push(parkBack.id)
 
         const parkLeft = WallNode.parse({
-          start: [-parkW / 2, parkX + parkD],
-          end: [-parkW / 2, parkX],
+          start: [-parkW / 2, parkZEnd],
+          end: [-parkW / 2, parkZStart],
         })
         ops.push({ node: parkLeft, parentId: level.id })
         ids.push(parkLeft.id)
@@ -480,10 +488,10 @@ export function HousePlannerPanel() {
         // Parking slab
         const parkSlab = SlabNode.parse({
           polygon: [
-            [-parkW / 2, parkX],
-            [parkW / 2, parkX],
-            [parkW / 2, parkX + parkD],
-            [-parkW / 2, parkX + parkD],
+            [-parkW / 2, parkZStart],
+            [parkW / 2, parkZStart],
+            [parkW / 2, parkZEnd],
+            [-parkW / 2, parkZEnd],
           ],
         })
         ops.push({ node: parkSlab, parentId: level.id })
@@ -493,6 +501,14 @@ export function HousePlannerPanel() {
 
     createNodes(ops)
     setCreatedNodeIds(ids)
+
+    // Switch the Scene panel to the =generated building + ground floor so nodes
+    // are immediately visible and selectable in the hierarchy.
+    // Call setPhase first so the editor switches to structure mode (which auto-selects
+    // the first available building/level), then override to our specific IDs.
+    setPhase('structure')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    setSelection({ buildingId: building.id as any, levelId: groundLevelId as any })
   }
 
   const handleReset = () => {
@@ -502,6 +518,8 @@ export function HousePlannerPanel() {
     setCreatedNodeIds([])
     setSelections({ plot: null, style: null, bedrooms: null, parking: null })
     setWarnings([])
+    // setPhase('site') resets the viewer selection internally
+    setPhase('site')
   }
 
   const statusValid = isComplete && !hasConflicts

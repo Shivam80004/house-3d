@@ -50,5 +50,8 @@
     "apps/*",
     "packages/*",
     "tooling/*"
-  ]
+  ],
+  "dependencies": {
+    "groq-sdk": "^1.2.0"
+  }
 }

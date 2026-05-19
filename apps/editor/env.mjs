@@ -13,7 +13,9 @@ export const env = createEnv({
   /**
    * Server-side environment variables (not exposed to client)
    */
-  server: {},
+  server: {
+    GROQ_API_KEY: z.string().min(1).optional(),
+  },
 
   /**
    * Client-side environment variables (exposed to browser via NEXT_PUBLIC_)
@@ -26,6 +28,7 @@ export const env = createEnv({
    * Runtime values - pulls from process.env
    */
   runtimeEnv: {
+    GROQ_API_KEY: process.env.GROQ_API_KEY,
     NEXT_PUBLIC_ASSETS_CDN_URL:
       process.env.NEXT_PUBLIC_ASSETS_CDN_URL ?? process.env.NEXT_PUBLIC_EDITOR_ASSETS_CDN_URL,
   },

@@ -134,8 +134,11 @@ export const RoofSystem = () => {
           updateMergedRoofGeometry(node as RoofNode, group, nodes)
           roofsProcessed++
         }
+        // Only clear when the group was found and processed; if the renderer
+        // hasn't mounted yet the update would be silently dropped, so keep it
+        // pending for the next frame.
+        pendingRoofUpdates.delete(id)
       }
-      pendingRoofUpdates.delete(id)
     }
   }, 5) // Priority 5: run after all other systems have settled
 
