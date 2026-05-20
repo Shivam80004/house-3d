@@ -194,6 +194,28 @@ const TOOLS: Groq.Chat.ChatCompletionTool[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'add_outdoor_elements',
+      description:
+        'Add outdoor landscaping elements (trees, fences, parking). ONLY call if user requested garden, landscaping, trees, parking, or outdoor elements. Do NOT call if user said "no garden".',
+      parameters: {
+        type: 'object',
+        properties: {
+          elements: {
+            type: 'array',
+            items: {
+              type: 'string',
+              enum: ['fir-tree', 'tree', 'low-fence', 'parking-spot'],
+            },
+            description: 'Which outdoor elements to add. Example: ["fir-tree", "low-fence", "parking-spot"]',
+          },
+        },
+        required: ['elements'],
+      },
+    },
+  },
 ]
 
 const MAX_ITERATIONS = 10
@@ -329,6 +351,15 @@ async function executeToolServerSide(
         summary,
       }
     }
+    case 'add_outdoor_elements': {
+      const { elements } = args as { elements: string[] }
+      const addedElements = elements || []
+      return {
+        elements: addedElements,
+        status: 'added',
+        count: addedElements.length,
+      }
+    }
     default:
       return { error: `Unknown tool: ${toolName}` }
   }
@@ -348,31 +379,63 @@ export async function POST(req: Request) {
 
     const systemPrompt = `You are a careful, methodical architect. Design rooms step-by-step:
 
-1. UNDERSTAND: Read the user's brief. Decide: 2BHK? Modern kitchen? Parking?
-   Break it into: Foyer, Living Room, Kitchen, Master Bedroom, Master Bathroom,
-   Bedroom, Bathroom, optional Garage.
+1. UNDERSTAND: Read the user's brief carefully.
+   - Count BHK (1BHK, 2BHK, 3BHK, etc.)
+   - Note preferences: "no garden", "no parking", "no bathroom", "modern", "luxury", "minimal"
+   - Decide rooms needed based on BHK
 
-2. PLAN BEFORE ACTING: Before create_room, decide the room polygon. Room sizes (meters, width × depth):
+2. PLAN BEFORE ACTING: Before create_room, decide room polygon. Room sizes (meters, width × depth):
    - Living Room: 6×5 to 8×6 | Kitchen: 4×4 to 5×5 | Master Bedroom: 4×5 to 5×6
    - Bedroom: 3×4 to 4×5 | Bathroom: 2×2.5 to 2.5×3 | Master Bathroom: 3×4
    - Foyer: 2×3 | Garage: 6×6 to 7×7
 
-3. BUILD SHELL: Call create_room for each room. Immediately call get_room_blueprint to read back wall IDs and geometry.
+3. BUILD SHELL: Call create_room for each room. Immediately call get_room_blueprint to read back geometry.
    Ensure: Rooms share walls (no gaps, no overlaps) | Bedrooms grouped together | Living Room adjacent to Kitchen
 
 4. ADD OPENINGS: For each room, call add_door (entry, inter-room). Call add_window ONLY on exterior walls.
    Position at t=0.3-0.7 (never corners).
 
-5. SEARCH AND PLACE: Call search_assets to find items for the room type. Then place_items with coordinates inside polygon.
-   Living Room: sofa, coffee-table, tv-stand | Kitchen: kitchen, fridge, dining-table
-   Bedrooms: bed, bedside-table, dresser | Bathrooms: toilet, sink, shower/bathtub
+5. SEARCH AND PLACE FIXTURES: Call search_assets, then place_items ONLY following these rules:
 
-6. VERIFY: Call verify_scene. If issues, fix them. Call verify_scene again.
+   FIXTURE PLACEMENT RULES (NON-NEGOTIABLE):
+   - Toilets: ONLY in Bathroom or Master Bathroom, never elsewhere
+   - Sinks: ONLY in Bathroom, Master Bathroom, or Kitchen
+   - Beds: ONLY in bedrooms, against longest wall
+   - Kitchen unit/Fridge/Stove: ONLY in Kitchen
+   - Shower/Bathtub: ONLY in Bathroom or Master Bathroom
+   - Sofa/Coffee-table/TV-stand: ONLY in Living Room
+   - Dining-table/Chairs: ONLY in Kitchen or Living Room
 
-7. FINISH: When verified, write a brief summary of what you built.
+   QUANTITY RULES (Follow based on user's BHK):
+   - 1BHK: 1 toilet, 1 sink, 1 bed, minimal furniture
+   - 2BHK: 2 toilets, 2-3 sinks, 2 beds, moderate furniture
+   - 3BHK: 3 toilets, 3-4 sinks, 3 beds, full furniture
+   - Add more items if user says "luxury", fewer if "minimal"
 
-CONSTRAINTS: Coordinates are ALWAYS actual numbers. Use levelId: "${sceneContext?.currentLevelId || 'level'}"
-Start at [0,0], grow in +X and +Z. Rooms must be adjacent. If unsure about item dimensions, search_assets BEFORE placing.`
+   USER PREFERENCE RULES:
+   - If user says "no bathroom" → skip Bathroom room entirely
+   - If user says "no garden" or "no outdoor" → DO NOT call add_outdoor_elements
+   - If user says "no parking" → skip Garage
+   - If user says "minimal" → use fewer fixtures per room
+   - If user says "luxury" → use more fixtures and quality items
+
+6. ADD OUTDOOR ELEMENTS (Optional):
+   - ONLY if user explicitly asks for "garden", "trees", "parking", "landscaping", or "outdoor"
+   - Call add_outdoor_elements with requested items
+   - If user said "no garden", SKIP this step entirely
+
+7. VERIFY: Call verify_scene. If issues, fix them. Call verify_scene again.
+
+8. FINISH: Write a brief summary of what you built, noting user preferences honored.
+
+CRITICAL CONSTRAINTS:
+- Coordinates are ALWAYS actual numbers, never variables
+- Use levelId: "${sceneContext?.currentLevelId || 'level'}"
+- Start at [0,0], grow in +X and +Z
+- Rooms must be adjacent (no floating rooms)
+- ALWAYS respect user preferences about garden, parking, bathrooms
+- ALWAYS follow fixture placement rules - never put toilet in living room, bed in kitchen, etc.
+- If unsure about item dimensions, search_assets BEFORE placing`
 
     const messages: Groq.Chat.ChatCompletionMessageParam[] = [
       { role: 'system', content: systemPrompt },

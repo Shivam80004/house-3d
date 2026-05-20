@@ -263,35 +263,6 @@ function addFurnitureToRoom(room: RoomInfo, ops: any[], levelId: string): void {
   }
 }
 
-function addOutdoorLandscaping(rooms: RoomInfo[], ops: any[], levelId: string): void {
-  if (rooms.length === 0) return
-  const allXs = rooms.flatMap((r) => r.polygon.map(([x]) => x))
-  const allZs = rooms.flatMap((r) => r.polygon.map(([, z]) => z))
-  const minX = Math.min(...allXs) - 3
-  const maxX = Math.max(...allXs) + 3
-  const minZ = Math.min(...allZs) - 3
-  const maxZ = Math.max(...allZs) + 3
-
-  // Fir trees along front edge
-  for (let x = minX; x <= maxX; x += 3) {
-    addItem('fir-tree', [x, 0, maxZ + 2], 0, ops, levelId)
-  }
-  // Large trees at corners
-  addItem('tree', [minX + 2, 0, minZ - 2], 0, ops, levelId)
-  addItem('tree', [maxX - 2, 0, minZ - 2], 0, ops, levelId)
-  // Parking spot near garage room if exists
-  const garage = rooms.find((r) => r.name.toLowerCase().includes('garage') || r.name.toLowerCase().includes('parking'))
-  if (garage) {
-    const gCX = (garage.minX + garage.maxX) / 2
-    const gCZ = garage.maxZ + 2
-    addItem('parking-spot', [gCX, 0, gCZ], 0, ops, levelId)
-  }
-  // Low fence row at front
-  for (let x = minX; x <= maxX; x += 2) {
-    addItem('low-fence', [x, 0, maxZ + 3.5], 0, ops, levelId)
-  }
-}
-
 export async function executeToolCalls(
   toolCalls: ToolCall[],
   levelId: string
@@ -360,7 +331,7 @@ export async function executeToolCalls(
     }
   }
 
-  // Second pass: process doors and windows from tool calls
+  // Second pass: process doors, windows, items, and outdoor elements from tool calls
   for (const call of toolCalls) {
     if (call.name === 'add_door') {
       // Doors could be created here if DoorNode exists in the core
@@ -394,6 +365,71 @@ export async function executeToolCalls(
         })
         ops.push({ node: item, parentId: levelId })
         createdIds.push(item.id)
+      }
+    }
+    if (call.name === 'add_outdoor_elements') {
+      const { elements } = call.input as { elements: string[] }
+      // Place outdoor elements at perimeter
+      if (rooms.length > 0) {
+        const allXs = rooms.flatMap((r) => r.polygon.map(([x]) => x))
+        const allZs = rooms.flatMap((r) => r.polygon.map(([, z]) => z))
+        const minX = Math.min(...allXs) - 3
+        const maxX = Math.max(...allXs) + 3
+        const minZ = Math.min(...allZs) - 3
+        const maxZ = Math.max(...allZs) + 3
+
+        for (const element of elements || []) {
+          const assetMeta = ASSET_CATALOG[element]
+          if (!assetMeta) continue
+
+          let positions: [number, number, number][] = []
+
+          if (element === 'fir-tree') {
+            // Place along front
+            for (let x = minX; x <= maxX; x += 3) {
+              positions.push([x, 0, maxZ + 2])
+            }
+          } else if (element === 'tree') {
+            // Place at corners
+            positions.push([minX + 2, 0, minZ - 2])
+            positions.push([maxX - 2, 0, minZ - 2])
+          } else if (element === 'low-fence') {
+            // Fence row at front
+            for (let x = minX; x <= maxX; x += 2) {
+              positions.push([x, 0, maxZ + 3.5])
+            }
+          } else if (element === 'parking-spot') {
+            // Parking near garage if exists
+            const garage = rooms.find(
+              (r) => r.name.toLowerCase().includes('garage') || r.name.toLowerCase().includes('parking')
+            )
+            if (garage) {
+              const gCX = (garage.minX + garage.maxX) / 2
+              const gCZ = garage.maxZ + 2
+              positions.push([gCX, 0, gCZ])
+            }
+          }
+
+          for (const pos of positions) {
+            const item = ItemNode.parse({
+              position: pos,
+              rotation: [0, 0, 0],
+              asset: {
+                id: element,
+                name: element,
+                category: assetMeta.category,
+                thumbnail: assetMeta.thumbnail,
+                src: assetMeta.src,
+                dimensions: assetMeta.dimensions,
+                offset: assetMeta.offset ?? [0, 0, 0],
+                rotation: [0, 0, 0],
+                scale: [1, 1, 1],
+              },
+            })
+            ops.push({ node: item, parentId: levelId })
+            createdIds.push(item.id)
+          }
+        }
       }
     }
   }
@@ -463,8 +499,8 @@ export async function executeToolCalls(
     createdIds.push(roof.id)
     createdIds.push(roofSegment.id)
 
-    // Add outdoor landscaping
-    addOutdoorLandscaping(rooms, ops, levelId)
+    // Outdoor landscaping is now user-driven via add_outdoor_elements tool
+    // No auto-landscaping - AI decides based on user preferences
   }
 
   // Execute all operations at once
