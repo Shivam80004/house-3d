@@ -196,7 +196,7 @@ const TOOLS: Groq.Chat.ChatCompletionTool[] = [
   },
 ]
 
-const MAX_ITERATIONS = 15
+const MAX_ITERATIONS = 10
 
 const ASSET_CATALOG: Record<
   string,
@@ -386,11 +386,11 @@ Start at [0,0], grow in +X and +Z. Rooms must be adjacent. If unsure about item 
       console.log(`[AI Loop] Iteration ${i + 1}/${MAX_ITERATIONS}`)
       try {
         const response = await groq.chat.completions.create({
-          model: 'llama-3.3-70b-versatile',
+          model: 'llama-3.1-8b-instant',
           tools: TOOLS,
           tool_choice: 'auto',
           messages,
-          max_tokens: 2048,
+          max_tokens: 1024,
         })
 
         const msg = response.choices[0]!.message
@@ -440,7 +440,9 @@ Start at [0,0], grow in +X and +Z. Rooms must be adjacent. If unsure about item 
       message: finalMessage,
     })
   } catch (error) {
-    console.error('AI generation error:', error)
-    return Response.json({ error: 'Failed to generate' }, { status: 500 })
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    console.error('AI generation error:', errorMsg)
+    console.error('Full error:', error)
+    return Response.json({ error: `Failed to generate: ${errorMsg}` }, { status: 500 })
   }
 }
