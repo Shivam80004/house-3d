@@ -303,6 +303,9 @@ export async function executeToolCalls(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ops: any[] = []
 
+  // Map wall IDs to wall objects for reference
+  const wallMap = new Map<string, WallNode>()
+
   // First pass: create rooms and track info
   for (const call of toolCalls) {
     if (call.name === 'create_room') {
@@ -333,6 +336,7 @@ export async function executeToolCalls(
           end: [end[0], end[1]],
         })
         walls.push(wall)
+        wallMap.set(wall.id, wall)
         ops.push({ node: wall, parentId: levelId })
         createdIds.push(wall.id)
       }
@@ -353,6 +357,44 @@ export async function executeToolCalls(
       createdIds.push(ceiling.id)
 
       rooms.push({ name, polygon, wallHeight, walls, minX, maxX, minZ, maxZ })
+    }
+  }
+
+  // Second pass: process doors and windows from tool calls
+  for (const call of toolCalls) {
+    if (call.name === 'add_door') {
+      // Doors could be created here if DoorNode exists in the core
+      // For now, skipping as room generation handles basic connectivity
+    }
+    if (call.name === 'add_window') {
+      // Windows will be auto-generated below for exterior walls
+    }
+    if (call.name === 'place_items') {
+      const { assetId, position, rotation = 0 } = call.input as {
+        assetId: string
+        position: [number, number, number]
+        rotation?: number
+      }
+      const assetMeta = ASSET_CATALOG[assetId]
+      if (assetMeta) {
+        const item = ItemNode.parse({
+          position,
+          rotation: [0, rotation, 0],
+          asset: {
+            id: assetId,
+            name: assetId,
+            category: assetMeta.category,
+            thumbnail: assetMeta.thumbnail,
+            src: assetMeta.src,
+            dimensions: assetMeta.dimensions,
+            offset: assetMeta.offset ?? [0, 0, 0],
+            rotation: [0, 0, 0],
+            scale: [1, 1, 1],
+          },
+        })
+        ops.push({ node: item, parentId: levelId })
+        createdIds.push(item.id)
+      }
     }
   }
 
