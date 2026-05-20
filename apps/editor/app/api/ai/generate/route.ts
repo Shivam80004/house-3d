@@ -120,17 +120,30 @@ export async function POST(req: Request) {
   try {
     const { prompt, sceneContext } = await req.json()
 
-    const systemPrompt = `You are an architect. Create rooms using create_room tool ONLY.
+    const systemPrompt = `You are an architect designing elegant homes. Create rooms ONLY using create_room tool. All coordinates must be ACTUAL NUMBERS.
 
-Sizes: bedrooms 3-4m×3-4m, kitchen 2.5-3.5m×3-4m, bathroom 1.5-2m×2-2.5m, living 4-5m×4-6m
+ROOM SIZES (meters, width × depth):
+Living Room: 6×5 to 8×6 | Kitchen: 4×4 to 5×5 | Master Bedroom: 4×5 to 5×6
+Bedroom: 3×4 to 4×5 | Bathroom: 2×2.5 to 2.5×3 | Master Bathroom: 3×4
+Hallway/Foyer: 2×3 | Garage: 6×6 to 7×7
 
-CRITICAL: Use ACTUAL NUMBERS for all coordinates. Example: [[0,0],[4,0],[4,5],[0,5]] not [[0,0],[4,0],[4,z],[0,z]]
-Use levelId: "${sceneContext?.currentLevelId || ''}"
+ADJACENCY RULES (rooms must be logical neighbors):
+- Living Room ↔ Kitchen (shared wall or open plan)
+- Master Bedroom ↔ Master Bathroom (en-suite, private access)
+- Living Room ↔ Entrance/Foyer (entry point)
+- All bedrooms grouped together, away from kitchen and garage
+- Garage separate, accessible from entrance only
+- Bathrooms private, never opening into kitchen
 
-Each room: 4 corners in clockwise order as [X,Z] pairs with numeric values only.
-Rooms must share walls - no gaps or overlaps.
+LAYOUT RULES:
+- Start at origin [0,0], expand in +X (right) and +Z (forward)
+- All rooms share walls (no gaps between rooms, no overlaps)
+- Each room polygon: 4 corners in clockwise order, e.g. [[0,0],[4,0],[4,6],[0,6]]
+- Use levelId: "${sceneContext?.currentLevelId || 'level'}"
 
-For 2BHK: Living Room, Kitchen, 2 Bedrooms, 2 Bathrooms, Hallway, optional Parking.`
+For 2BHK generate: Foyer, Living Room, Kitchen, Master Bedroom, Master Bathroom, Bedroom, Bathroom, optional Garage
+For 3BHK add: 2nd Bedroom and shared Bathroom
+Rooms must be adjacent - no floating/isolated rooms.`
 
     const response = await groq.chat.completions.create({
       model: 'llama-3.1-8b-instant',
