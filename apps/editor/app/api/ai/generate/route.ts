@@ -221,7 +221,7 @@ const TOOLS: Groq.Chat.ChatCompletionTool[] = [
   },
 ]
 
-const MAX_ITERATIONS = 5
+const MAX_ITERATIONS = 4
 
 const ASSET_CATALOG: Record<
   string,
@@ -451,9 +451,9 @@ export async function POST(req: Request) {
       windows: [],
     }
 
-    const systemPrompt = `Create rooms then furnish. Room sizes: LR 6×5, K 4×4, MB 4×5, B 3×4, Bath 2×2.5. Start [0,0], grow +X/+Z. Polygon: [[x,z],...].
-1. create_room for each, get_room_blueprint, add_door/window (ext only, t=0.3-0.7).
-2. search_assets, place_items. 3. verify_scene. If bad: delete_room, recreate, re-verify. Done when ok=true. LevelId: "${sceneContext?.currentLevelId || 'level'}"`
+    const systemPrompt = `Build : create rooms, add doors/windows, place items, verify. LevelId: "${sceneContext?.currentLevelId || 'level'}"
+    Rooms (fixed coords): LR[0-6,0-5], K[6-10,0-4], MB[0-4,5-10], B[4-8,5-9], Bath[6-8.5,5-7.5].
+    WORKFLOW: For each room: 1) create_room 2) get_room_blueprint 3) add_door(wallId from blueprint, t=0.5) 4) add_window(t=0.5 exterior). 5) search_assets 6) place_items. 7) verify_scene once. Done.`
 
     const messages: Groq.Chat.ChatCompletionMessageParam[] = [
       { role: 'system', content: systemPrompt },
