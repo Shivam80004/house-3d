@@ -299,7 +299,15 @@ async function executeToolServerSide(
   switch (toolName) {
     case 'create_room': {
       const roomId = `room_${sceneState.rooms.length}`
-      const polygon = args.polygon as number[][]
+      let polygon = args.polygon as number[][]
+      // Handle LLM sometimes stringifying the polygon
+      if (typeof polygon === 'string') {
+        try {
+          polygon = JSON.parse(polygon)
+        } catch {
+          return { error: `Invalid polygon format: ${polygon}` }
+        }
+      }
       const room = { roomId, name: args.name, polygon }
       sceneState.rooms.push(room)
       const xs = polygon.map((p) => p[0] ?? 0)
@@ -445,6 +453,7 @@ export async function POST(req: Request) {
 
     const systemPrompt = `Design a house step-by-step:
 1. Create rooms: Living Room (6×5), Kitchen (4×4), Master Bed (4×5), Bed (3×4), Bath (2×2.5), Master Bath (3×4). Foyer (2×3) optional. Use actual coordinates, start [0,0], grow +X/+Z.
+   IMPORTANT: polygon parameter MUST be an array of [x,z] coordinate pairs, NOT a string. Example: polygon: [[0,0], [6,0], [6,5], [0,5]] (no quotes around the array).
 2. For each room: get_room_blueprint, add_door (inter-room), add_window (exterior only, t=0.3-0.7).
 3. Search and place: search_assets, place_items inside room polygons.
 4. Verify: Call verify_scene. If ok=true, done. If ok=false: delete_room on problematic rooms, recreate with corrected polygon, verify again.
