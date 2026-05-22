@@ -1,8 +1,15 @@
 import Groq from 'groq-sdk'
 
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
-})
+let groqInstance: Groq | null = null
+
+function getGroq(): Groq {
+  if (!groqInstance) {
+    groqInstance = new Groq({
+      apiKey: process.env.GROQ_API_KEY,
+    })
+  }
+  return groqInstance
+}
 
 const TOOLS: Groq.Chat.ChatCompletionTool[] = [
   {
@@ -455,7 +462,7 @@ Use levelId: "${sceneContext?.currentLevelId || 'level'}" | Rooms adjacent, no o
     for (let i = 0; i < MAX_ITERATIONS; i++) {
       console.log(`[AI Loop] Iteration ${i + 1}/${MAX_ITERATIONS}`)
       try {
-        const response = await groq.chat.completions.create({
+        const response = await getGroq().chat.completions.create({
           model: 'llama-3.1-8b-instant',
           tools: TOOLS,
           tool_choice: 'auto',
