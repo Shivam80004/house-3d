@@ -7,6 +7,8 @@ export const ItemTool: React.FC = () => {
   const selectedItem = useEditor((state) => state.selectedItem)
   const draftNode = useDraftNode()
 
+  if (!selectedItem) return null
+
   const cursor = usePlacementCoordinator({
     asset: selectedItem,
     draftNode,
@@ -21,6 +23,5 @@ export const ItemTool: React.FC = () => {
     },
   })
 
-  if (!selectedItem) return null
   return <>{cursor}</>
 }
