@@ -221,7 +221,7 @@ const TOOLS: Groq.Chat.ChatCompletionTool[] = [
   },
 ]
 
-const MAX_ITERATIONS = 7
+const MAX_ITERATIONS = 5
 
 const ASSET_CATALOG: Record<
   string,
@@ -451,14 +451,9 @@ export async function POST(req: Request) {
       windows: [],
     }
 
-    const systemPrompt = `Design a house step-by-step:
-1. Create rooms: Living Room (6×5), Kitchen (4×4), Master Bed (4×5), Bed (3×4), Bath (2×2.5), Master Bath (3×4). Foyer (2×3) optional. Use actual coordinates, start [0,0], grow +X/+Z.
-   IMPORTANT: polygon parameter MUST be an array of [x,z] coordinate pairs, NOT a string. Example: polygon: [[0,0], [6,0], [6,5], [0,5]] (no quotes around the array).
-2. For each room: get_room_blueprint, add_door (inter-room), add_window (exterior only, t=0.3-0.7).
-3. Search and place: search_assets, place_items inside room polygons.
-4. Verify: Call verify_scene. If ok=true, done. If ok=false: delete_room on problematic rooms, recreate with corrected polygon, verify again.
-5. Summary: Brief description of the built house.
-Use levelId: "${sceneContext?.currentLevelId || 'level'}" | Rooms adjacent, no overlaps | Items inside rooms.`
+    const systemPrompt = `Create rooms then furnish. Room sizes: LR 6×5, K 4×4, MB 4×5, B 3×4, Bath 2×2.5. Start [0,0], grow +X/+Z. Polygon: [[x,z],...].
+1. create_room for each, get_room_blueprint, add_door/window (ext only, t=0.3-0.7).
+2. search_assets, place_items. 3. verify_scene. If bad: delete_room, recreate, re-verify. Done when ok=true. LevelId: "${sceneContext?.currentLevelId || 'level'}"`
 
     const messages: Groq.Chat.ChatCompletionMessageParam[] = [
       { role: 'system', content: systemPrompt },
@@ -476,7 +471,7 @@ Use levelId: "${sceneContext?.currentLevelId || 'level'}" | Rooms adjacent, no o
           tools: TOOLS,
           tool_choice: 'auto',
           messages,
-          max_tokens: 512,
+          max_tokens: 256,
         })
 
         const msg = response.choices[0]!.message
