@@ -194,9 +194,27 @@ const TOOLS: Groq.Chat.ChatCompletionTool[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'delete_room',
+      description:
+        'Delete a room and all its doors/windows to fix layout issues. Use when verify_scene detects overlapping or misaligned rooms.',
+      parameters: {
+        type: 'object',
+        properties: {
+          roomId: {
+            type: 'string',
+            description: 'ID of the room to delete (e.g., room_0, room_1)',
+          },
+        },
+        required: ['roomId'],
+      },
+    },
+  },
 ]
 
-const MAX_ITERATIONS = 10
+const MAX_ITERATIONS = 7
 
 const ASSET_CATALOG: Record<
   string,
@@ -234,6 +252,36 @@ let sceneState = {
   items: [] as Array<{ itemId: string; assetId: string; position: number[] }>,
   doors: [] as Array<{ doorId: string; wallId: string }>,
   windows: [] as Array<{ windowId: string; wallId: string }>,
+}
+
+// Geometry helpers for collision detection
+function pointInPolygon(point: [number, number], polygon: number[][]): boolean {
+  const [x, z] = point
+  let inside = false
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const pi = polygon[i]
+    const pj = polygon[j]
+    if (!pi || !pj) continue
+    const xi = pi[0] ?? 0
+    const zi = pi[1] ?? 0
+    const xj = pj[0] ?? 0
+    const zj = pj[1] ?? 0
+    const intersect = zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi
+    if (intersect) inside = !inside
+  }
+  return inside
+}
+
+function polygonsOverlap(poly1: number[][], poly2: number[][]): boolean {
+  for (const vertex of poly1) {
+    const [x = 0, z = 0] = vertex
+    if (pointInPolygon([x, z], poly2)) return true
+  }
+  for (const vertex of poly2) {
+    const [x = 0, z = 0] = vertex
+    if (pointInPolygon([x, z], poly1)) return true
+  }
+  return false
 }
 
 async function executeToolServerSide(
@@ -322,12 +370,54 @@ async function executeToolServerSide(
       }
     }
     case 'verify_scene': {
-      const summary = `Scene contains ${sceneState.rooms.length} rooms, ${sceneState.items.length} items, ${sceneState.doors.length} doors, ${sceneState.windows.length} windows.`
-      return {
-        ok: true,
-        issues: [],
-        summary,
+      const issues: string[] = []
+
+      // Check for overlapping rooms
+      for (let i = 0; i < sceneState.rooms.length; i++) {
+        for (let j = i + 1; j < sceneState.rooms.length; j++) {
+          const room1 = sceneState.rooms[i]
+          const room2 = sceneState.rooms[j]
+          if (room1 && room2 && polygonsOverlap(room1.polygon, room2.polygon)) {
+            issues.push(
+              `Rooms overlap: "${room1.name}" (${room1.roomId}) and "${room2.name}" (${room2.roomId})`
+            )
+          }
+        }
       }
+
+      // Check for items outside room bounds
+      for (const item of sceneState.items) {
+        const pos = item.position
+        let inRoom = false
+        for (const room of sceneState.rooms) {
+          if (room && pointInPolygon([pos[0] ?? 0, pos[2] ?? 0], room.polygon)) {
+            inRoom = true
+            break
+          }
+        }
+        if (!inRoom) {
+          issues.push(`Item "${item.assetId}" (${item.itemId}) is outside all rooms at position [${pos}]`)
+        }
+      }
+
+      const ok = issues.length === 0
+      const summary = `Scene contains ${sceneState.rooms.length} rooms, ${sceneState.items.length} items, ${sceneState.doors.length} doors, ${sceneState.windows.length} windows.${ok ? ' All checks passed.' : ` ${issues.length} issues found.`}`
+      return { ok, issues, summary }
+    }
+    case 'delete_room': {
+      const roomId = args.roomId as string
+      const roomIndex = sceneState.rooms.findIndex((r) => r.roomId === roomId)
+      if (roomIndex === -1) {
+        return { error: `Room ${roomId} not found` }
+      }
+      const room = sceneState.rooms[roomIndex]
+      if (!room) {
+        return { error: `Room ${roomId} not found` }
+      }
+      sceneState.rooms.splice(roomIndex, 1)
+      sceneState.doors = sceneState.doors.filter((d) => !d.wallId.includes(roomId))
+      sceneState.windows = sceneState.windows.filter((w) => !w.wallId.includes(roomId))
+      return { status: 'deleted', roomId, name: room.name }
     }
     default:
       return { error: `Unknown tool: ${toolName}` }
@@ -346,33 +436,13 @@ export async function POST(req: Request) {
       windows: [],
     }
 
-    const systemPrompt = `You are a careful, methodical architect. Design rooms step-by-step:
-
-1. UNDERSTAND: Read the user's brief. Decide: 2BHK? Modern kitchen? Parking?
-   Break it into: Foyer, Living Room, Kitchen, Master Bedroom, Master Bathroom,
-   Bedroom, Bathroom, optional Garage.
-
-2. PLAN BEFORE ACTING: Before create_room, decide the room polygon. Room sizes (meters, width × depth):
-   - Living Room: 6×5 to 8×6 | Kitchen: 4×4 to 5×5 | Master Bedroom: 4×5 to 5×6
-   - Bedroom: 3×4 to 4×5 | Bathroom: 2×2.5 to 2.5×3 | Master Bathroom: 3×4
-   - Foyer: 2×3 | Garage: 6×6 to 7×7
-
-3. BUILD SHELL: Call create_room for each room. Immediately call get_room_blueprint to read back wall IDs and geometry.
-   Ensure: Rooms share walls (no gaps, no overlaps) | Bedrooms grouped together | Living Room adjacent to Kitchen
-
-4. ADD OPENINGS: For each room, call add_door (entry, inter-room). Call add_window ONLY on exterior walls.
-   Position at t=0.3-0.7 (never corners).
-
-5. SEARCH AND PLACE: Call search_assets to find items for the room type. Then place_items with coordinates inside polygon.
-   Living Room: sofa, coffee-table, tv-stand | Kitchen: kitchen, fridge, dining-table
-   Bedrooms: bed, bedside-table, dresser | Bathrooms: toilet, sink, shower/bathtub
-
-6. VERIFY: Call verify_scene. If issues, fix them. Call verify_scene again.
-
-7. FINISH: When verified, write a brief summary of what you built.
-
-CONSTRAINTS: Coordinates are ALWAYS actual numbers. Use levelId: "${sceneContext?.currentLevelId || 'level'}"
-Start at [0,0], grow in +X and +Z. Rooms must be adjacent. If unsure about item dimensions, search_assets BEFORE placing.`
+    const systemPrompt = `Design a house step-by-step:
+1. Create rooms: Living Room (6×5), Kitchen (4×4), Master Bed (4×5), Bed (3×4), Bath (2×2.5), Master Bath (3×4). Foyer (2×3) optional. Use actual coordinates, start [0,0], grow +X/+Z.
+2. For each room: get_room_blueprint, add_door (inter-room), add_window (exterior only, t=0.3-0.7).
+3. Search and place: search_assets, place_items inside room polygons.
+4. Verify: Call verify_scene. If ok=true, done. If ok=false: delete_room on problematic rooms, recreate with corrected polygon, verify again.
+5. Summary: Brief description of the built house.
+Use levelId: "${sceneContext?.currentLevelId || 'level'}" | Rooms adjacent, no overlaps | Items inside rooms.`
 
     const messages: Groq.Chat.ChatCompletionMessageParam[] = [
       { role: 'system', content: systemPrompt },
@@ -390,7 +460,7 @@ Start at [0,0], grow in +X and +Z. Rooms must be adjacent. If unsure about item 
           tools: TOOLS,
           tool_choice: 'auto',
           messages,
-          max_tokens: 1024,
+          max_tokens: 512,
         })
 
         const msg = response.choices[0]!.message
