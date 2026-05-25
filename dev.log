@@ -1,5 +1,59 @@
+$ set -a && . ./.env 2>/dev/null; set +a; turbo run dev --env-mode=loose
+bun: command not found: set
+bun: command not found: set
+• turbo 2.9.12
 
-> dev
-> set -a && . ./.env 2>/dev/null; set +a; turbo run dev --env-mode=loose
+   • Packages in scope: @pascal-app/core, @pascal-app/editor, @pascal-app/mcp, @pascal-app/viewer, @pascal/typescript-config, @repo/eslint-config, @repo/typescript-config, @repo/ui, editor
+   • Running dev in 9 packages
+   • Remote caching disabled
 
-Environment variable -a  not defined
+@pascal-app/core:dev: cache bypass, force executing adb3990e3d7879f1
+@pascal-app/core:dev: $ tsc --build --watch
+@pascal-app/core:build: cache hit, replaying logs bbe0f139e4d23b61
+@pascal-app/core:build: [6n[m]0;C:\Windows\system32\cmd.exe[?25h[35m$[m [1m[97mtsc --build
+@pascal-app/core:build: [m
+@pascal-app/mcp:dev: cache bypass, force executing 3a2c6a2425dc2bdc
+@pascal-app/viewer:dev: cache bypass, force executing 554fc524bb1c65a3
+@pascal-app/viewer:build: cache hit, replaying logs 421a4c22a8c4af82
+@pascal-app/viewer:build: [6n[m]0;C:\Windows\system32\cmd.exe[?25h[35m$[m [1m[97mtsc --build
+@pascal-app/viewer:build: [m
+@pascal-app/mcp:build: cache hit, replaying logs 3a62a4575e7a25e9
+@pascal-app/mcp:build: [6n[m]0;C:\Windows\system32\cmd.exe[?25h[35m$[m [1m[97mtsc --build
+@pascal-app/mcp:build: [m
+editor:dev: cache bypass, force executing 397bc566dfc68a5a
+@pascal-app/mcp:dev: $ tsc --build --watch
+@pascal-app/viewer:dev: $ tsc --build --watch
+editor:dev: $ dotenv -e ../../.env.local -- next dev --port 3002
+@pascal-app/core:dev: [2J[3J[H4:34:43 pm - Starting compilation in watch mode...
+@pascal-app/core:dev: 
+@pascal-app/mcp:dev: [2J[3J[H4:34:43 pm - Starting compilation in watch mode...
+@pascal-app/mcp:dev: 
+@pascal-app/mcp:dev: 
+@pascal-app/mcp:dev: 4:34:43 pm - Found 0 errors. Watching for file changes.
+@pascal-app/viewer:dev: [2J[3J[H4:34:43 pm - Starting compilation in watch mode...
+@pascal-app/viewer:dev: 
+@pascal-app/mcp:dev: [2J[3J[H4:34:46 pm - File change detected. Starting incremental compilation...
+@pascal-app/mcp:dev: 
+@pascal-app/mcp:dev: 
+@pascal-app/mcp:dev: 4:34:46 pm - Found 0 errors. Watching for file changes.
+editor:dev: ⨯ Failed to start server
+editor:dev: Error: listen EADDRINUSE: address already in use :::3002
+editor:dev:     at <unknown> (Error: listen EADDRINUSE: address already in use :::3002)
+editor:dev:     at new Promise (<anonymous>) {
+editor:dev:   code: 'EADDRINUSE',
+editor:dev:   errno: -4091,
+editor:dev:   syscall: 'listen',
+editor:dev:   address: '::',
+editor:dev:   port: 3002
+editor:dev: }
+editor:dev: [?25h
+editor:dev: error: script "dev" exited with code 1
+ ERROR  editor#dev: command (F:\editor\apps\editor) C:\Users\Laptop-639\AppData\Roaming\npm\bun.cmd run dev exited (1)
+
+ Tasks:    3 successful, 7 total
+Cached:    3 cached, 7 total
+  Time:    5.058s 
+Failed:    editor#dev
+
+ ERROR  run failed: command  exited (1)
+error: script "dev" exited with code 1

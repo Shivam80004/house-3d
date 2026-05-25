@@ -223,6 +223,17 @@ const TOOLS: Groq.Chat.ChatCompletionTool[] = [
 
 const MAX_ITERATIONS = 4
 
+// Room specifications by type
+const ROOM_SPECS: Record<string, { width: number; depth: number; furniture: string[] }> = {
+  'living-room': { width: 6, depth: 5, furniture: ['sofa', 'coffee-table', 'tv-stand', 'round-carpet'] },
+  'kitchen': { width: 4, depth: 3.5, furniture: ['kitchen', 'fridge', 'stove'] },
+  'bedroom': { width: 4, depth: 3.5, furniture: ['double-bed', 'bedside-table', 'dresser'] },
+  'small-bedroom': { width: 3, depth: 3, furniture: ['single-bed', 'bedside-table'] },
+  'bathroom': { width: 2.5, depth: 2, furniture: ['toilet', 'bathroom-sink', 'shower-square'] },
+  'hallway': { width: 2, depth: 3, furniture: [] },
+  'foyer': { width: 2.5, depth: 3, furniture: [] },
+}
+
 const ASSET_CATALOG: Record<
   string,
   { category: string; dimensions: [number, number, number] }
@@ -451,9 +462,26 @@ export async function POST(req: Request) {
       windows: [],
     }
 
-    const systemPrompt = `Build : create rooms, add doors/windows, place items, verify. LevelId: "${sceneContext?.currentLevelId || 'level'}"
-    Rooms (fixed coords): LR[0-6,0-5], K[6-10,0-4], MB[0-4,5-10], B[4-8,5-9], Bath[6-8.5,5-7.5].
-    WORKFLOW: For each room: 1) create_room 2) get_room_blueprint 3) add_door(wallId from blueprint, t=0.5) 4) add_window(t=0.5 exterior). 5) search_assets 6) place_items. 7) verify_scene once. Done.`
+    const systemPrompt = `INTELLIGENT HOUSE DESIGN:
+1. ANALYZE: Understand house type (1BHK, 2BHK, 3BHK, villa, etc.) and requirements from user input.
+2. PLAN: Design room layout with calculated positions:
+   - LR 6×5: [0,0] to [6,5], doors to Kitchen/Hall, 2 windows
+   - Kitchen 4×3.5: adjacent to LR, 1 door, 1 window
+   - Master Bed 4×3.5: double-bed, 1 door, 1 window
+   - Bedroom 3×3: single-bed, 1 door, 1 window (skip if 1BHK)
+   - Bathroom 2.5×2: toilet+sink+shower, 1 door, NO windows
+   - Hallway/Foyer: connect rooms
+   ARRANGE: Position rooms to avoid overlaps. Use grid-aligned coordinates.
+3. BUILD: For each room in order:
+   a) create_room with polygon (clockwise: [x,z] vertices)
+   b) get_room_blueprint → extract wallIds
+   c) add_door on INTERIOR walls (t=0.5, 0.9m width)
+   d) add_window on EXTERIOR walls ONLY (t=0.5, 1.5m width)
+   e) search_assets for room-specific furniture
+   f) place_items at ROOM CENTER with 1.2m clearance from walls (items must be well inside)
+4. VERIFY: verify_scene. If overlaps/gaps: delete_room, recalculate positions, rebuild.
+5. FURNITURE MAPPING: LR→sofa+coffee-table, K→kitchen+fridge, Bed→bed+table, Bath→toilet+sink.
+LevelId: "${sceneContext?.currentLevelId || 'level'}" | All polygons as arrays [[x,z],...] NOT strings.`
 
     const messages: Groq.Chat.ChatCompletionMessageParam[] = [
       { role: 'system', content: systemPrompt },

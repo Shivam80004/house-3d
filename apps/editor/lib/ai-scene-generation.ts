@@ -255,11 +255,42 @@ function addItem(assetId: string, position: [number, number, number], rotY: numb
 function addFurnitureToRoom(room: RoomInfo, ops: any[], levelId: string): void {
   const key = room.name.toLowerCase()
   const items = ROOM_FURNITURE[key] ?? []
-  const centerX = (room.minX + room.maxX) / 2
-  const centerZ = (room.minZ + room.maxZ) / 2
+  const CLEARANCE = 1.2
+
+  // Calculate usable area with clearance from walls
+  const usableMinX = room.minX + CLEARANCE
+  const usableMaxX = room.maxX - CLEARANCE
+  const usableMinZ = room.minZ + CLEARANCE
+  const usableMaxZ = room.maxZ - CLEARANCE
+
+  if (usableMaxX <= usableMinX || usableMaxZ <= usableMinZ) return
+
+  const centerX = (usableMinX + usableMaxX) / 2
+  const centerZ = (usableMinZ + usableMaxZ) / 2
 
   for (const spec of items) {
-    addItem(spec.assetId, [centerX + spec.offsetX, 0, centerZ + spec.offsetZ], spec.rotY ?? 0, ops, levelId)
+    const assetMeta = ASSET_CATALOG[spec.assetId]
+    if (!assetMeta) continue
+
+    const [itemWidth, , itemDepth] = assetMeta.dimensions
+
+    // Further reduce bounds to account for item half-dimensions, ensuring clearance from walls
+    const itemMinX = usableMinX + itemWidth / 2
+    const itemMaxX = usableMaxX - itemWidth / 2
+    const itemMinZ = usableMinZ + itemDepth / 2
+    const itemMaxZ = usableMaxZ - itemDepth / 2
+
+    // Skip if item is too large to fit with clearance
+    if (itemMaxX <= itemMinX || itemMaxZ <= itemMinZ) continue
+
+    let x = centerX + spec.offsetX
+    let z = centerZ + spec.offsetZ
+
+    // Clamp to item-aware usable bounds
+    x = Math.max(itemMinX, Math.min(x, itemMaxX))
+    z = Math.max(itemMinZ, Math.min(z, itemMaxZ))
+
+    addItem(spec.assetId, [x, 0, z], spec.rotY ?? 0, ops, levelId)
   }
 }
 
@@ -398,30 +429,43 @@ export async function executeToolCalls(
     }
   }
 
-  // Add windows to exterior walls
+  // Add windows to exterior walls - one per room, on the longest wall
   for (const room of rooms) {
-    for (let i = 0; i < room.walls.length; i++) {
-      const wall = room.walls[i]!
-      const start = room.polygon[i]!
-      const isExterior =
-        start[0] === room.minX ||
-        start[0] === room.maxX ||
-        start[1] === room.minZ ||
-        start[1] === room.maxZ
+    // Skip bathrooms and hallways
+    const isBathroom = room.name.toLowerCase().includes('bathroom')
+    const isHallway = room.name.toLowerCase().includes('hallway')
+    if (isBathroom || isHallway) continue
 
-      if (isExterior && !room.name.includes('Bathroom') && !room.name.includes('Hallway')) {
-        const window = WindowNode.parse({
-          position: [0.5, 1.0, 0],
-          rotation: [0, 0, 0],
-          side: 'front',
-          wallId: wall.id,
-          width: 1.5,
-          height: 1.2,
-          windowType: 'fixed',
-        })
-        ops.push({ node: window, parentId: wall.id })
-        createdIds.push(window.id)
+    // Find the longest wall for this room
+    let longestWall = 0
+    let longestLength = 0
+
+    for (let i = 0; i < room.walls.length; i++) {
+      const start = room.polygon[i]!
+      const end = room.polygon[(i + 1) % room.polygon.length]!
+      const wallLength = Math.sqrt(Math.pow(end[0] - start[0], 2) + Math.pow(end[1] - start[1], 2))
+
+      if (wallLength > longestLength) {
+        longestLength = wallLength
+        longestWall = i
       }
+    }
+
+    // Add window to the longest wall if it's long enough
+    if (longestLength >= 2.0) {
+      const wall = room.walls[longestWall]!
+
+      const window = WindowNode.parse({
+        position: [0.5, 1.2, 0],
+        rotation: [0, 0, 0],
+        side: 'front',
+        wallId: wall.id,
+        width: 1.5,
+        height: 1.2,
+        windowType: 'fixed',
+      })
+      ops.push({ node: window, parentId: wall.id })
+      createdIds.push(window.id)
     }
   }
 
@@ -441,7 +485,8 @@ export async function executeToolCalls(
 
     const roofWidth = roofMaxX - roofMinX
     const roofDepth = roofMaxZ - roofMinZ
-    const avgWallHeight = rooms[0]!.wallHeight || 2.7
+    // Use standard wall height (all rooms should have same height)
+    const wallHeight = 2.7
 
     const roofSegment = RoofSegmentNode.parse({
       position: [0, 0, 0],
@@ -454,7 +499,7 @@ export async function executeToolCalls(
     })
 
     const roof = RoofNode.parse({
-      position: [roofMinX + roofWidth / 2, avgWallHeight, roofMinZ + roofDepth / 2],
+      position: [roofMinX + roofWidth / 2, wallHeight, roofMinZ + roofDepth / 2],
       children: [roofSegment.id],
     })
 

@@ -1,10 +1,11 @@
 'use client'
 
 import { Editor, ItemsPanel } from '@pascal-app/editor'
-import { Home, Layers, Package, Settings, Sparkles } from 'lucide-react'
+import { Brain, Home, Layers, Package, Settings, Sparkles } from 'lucide-react'
 import Link from 'next/link'
 import { HousePlannerPanel } from '@/components/panels/HousePlannerPanel'
 import { AiPanel } from '@/components/panels/AiPanel'
+import { PlannerPanel } from '@/components/panels/PlannerPanel'
 import {
   CommunityViewerToolbarLeft,
   CommunityViewerToolbarRight,
@@ -31,6 +32,13 @@ const SIDEBAR_TABS = [
     component: HousePlannerPanel,
     mobileDefaultSnap: 0.5,
     mobileIcon: <Home className="h-5 w-5" />,
+  },
+  {
+    id: 'ai-planner',
+    label: 'AI Planner',
+    component: PlannerPanel,
+    mobileDefaultSnap: 0.5,
+    mobileIcon: <Brain className="h-5 w-5" />,
   },
   {
     id: 'ai',
